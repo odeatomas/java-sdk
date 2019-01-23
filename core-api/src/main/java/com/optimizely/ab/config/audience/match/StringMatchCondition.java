@@ -16,21 +16,34 @@
  */
 package com.optimizely.ab.config.audience.match;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
-class GTMatch extends AttributeMatch<Number> {
-    Number value;
+/**
+ * Matches content of {@link String} against any {@link CharSequence} input.
+ */
+public class StringMatchCondition extends MatchCondition<String, CharSequence> {
+    private static final Logger logger = LoggerFactory.getLogger(StringMatchCondition.class);
 
-    protected GTMatch(Number value) {
-        this.value = value;
+    public StringMatchCondition(@Nonnull String name, @Nonnull String value) {
+        super(name, value);
     }
 
     @Nullable
-    public Boolean eval(Object attributeValue) {
-        try {
-            return castToValueType(attributeValue, value).doubleValue() > value.doubleValue();
-        } catch (Exception e) {
-            return null;
+    @Override
+    CharSequence convert(Object inputRaw) {
+        if (inputRaw instanceof CharSequence) {
+            return (CharSequence) inputRaw;
         }
+
+        return null;
+    }
+
+    @Nullable
+    public Boolean matches(CharSequence input) {
+        return value.contentEquals(input);
     }
 }

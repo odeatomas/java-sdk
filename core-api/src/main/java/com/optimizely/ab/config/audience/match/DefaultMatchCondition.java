@@ -1,6 +1,6 @@
 /**
  *
- *    Copyright 2019, Optimizely and contributors
+ *    Copyright 2018-2019, Optimizely and contributors
  *
  *    Licensed under the Apache License, Version 2.0 (the "License");
  *    you may not use this file except in compliance with the License.
@@ -14,22 +14,29 @@
  *    See the License for the specific language governing permissions and
  *    limitations under the License.
  */
-
 package com.optimizely.ab.config.audience.match;
 
-public enum NullMatchTypeErrors {
-    UNKNOWN_MATCH_TYPE("uses an unknown match type. You may need to upgrade to a newer release of the Optimizely SDK"),
-    INAPPLICABLE_CONDITION_VALUE("has an unexpected value type. You may need to upgrade to a newer release of the Optimizely SDK");
+import javax.annotation.Nonnull;
+import javax.annotation.Nullable;
 
-    private final String key;
-
-    NullMatchTypeErrors(String key) {
-        this.key = key;
+/**
+ * Matches input using {@link Object#equals(Object)}
+ *
+ * @param <T> type of value to match input against
+ */
+public class DefaultMatchCondition<T> extends MatchCondition<T, Object> {
+    public DefaultMatchCondition(@Nonnull String name, @Nonnull T value) {
+        super(name, value);
     }
 
+    @Nullable
     @Override
-    public String toString() {
-        return key;
+    Object convert(Object inputRaw) {
+        return inputRaw;
+    }
+
+    @Nullable
+    public Boolean matches(Object input) {
+        return value.equals(input);
     }
 }
-

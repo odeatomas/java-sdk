@@ -20,16 +20,13 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.optimizely.ab.config.ProjectConfig;
-import com.optimizely.ab.config.audience.match.Match;
-import com.optimizely.ab.config.audience.match.MatchType;
-import com.optimizely.ab.config.audience.match.NullMatch;
+import com.optimizely.ab.config.audience.match.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.Immutable;
-import java.util.Collections;
 import java.util.Map;
 
 /**
@@ -38,8 +35,9 @@ import java.util.Map;
 @Immutable
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class UserAttribute<T> implements Condition<T> {
-
     private static final Logger logger = LoggerFactory.getLogger(UserAttribute.class);
+    private static final String CUSTOM_ATTRIBUTE = "custom_attribute";
+
     private final String name;
     private final String type;
     private final String match;
@@ -74,50 +72,83 @@ public class UserAttribute<T> implements Condition<T> {
 
     @Nullable
     public Boolean evaluate(ProjectConfig config, Map<String, ?> attributes) {
-        if (attributes == null) {
-            attributes = Collections.emptyMap();
-        }
-        // Valid for primitive types, but needs to change when a value is an object or an array
-        Object userAttributeValue = attributes.get(name);
-
-        if (!"custom_attribute".equals(type)) {
+        if (!CUSTOM_ATTRIBUTE.equals(type)) {
             logger.warn("Audience condition \"{}\" has an unknown condition type. You may need to upgrade to a newer release of the Optimizely SDK", this);
             return null; // unknown type
         }
-        // check user attribute value is equal
-        try {
-            Match matchType = MatchType.getMatchType(match, value).getMatcher();
-            Boolean result = matchType.eval(userAttributeValue);
 
-            if (result == null) {
-                if (!attributes.containsKey(name)) {
-                    //Missing attribute value
-                    logger.debug("Audience condition \"{}\" evaluated to UNKNOWN because no value was passed for user attribute \"{}\"", this, name);
-                } else {
-                    //if attribute value is not valid
-                    if (userAttributeValue != null) {
-                        logger.warn(
-                            "Audience condition \"{}\" evaluated to UNKNOWN because a value of type \"{}\" was passed for user attribute \"{}\"",
-                            this,
-                            userAttributeValue.getClass().getCanonicalName(),
-                            name);
-                    } else {
-                        logger.warn(
-                            "Audience condition \"{}\" evaluated to UNKNOWN because a null value was passed for user attribute \"{}\"",
-                            this,
-                            name);
-                    }
-                }
-            }
-            return result;
-        } catch (NullPointerException np) {
-            logger.error("attribute or value null for match {}", match != null ? match : "legacy condition", np);
+        try {
+            Condition condition = getCondition();
+            //noinspection unchecked
+            return condition.evaluate(config, attributes);
+        } catch (UnknownMatchTypeException e) {
+            logger.warn("Audience condition has an unknown match type. You may need to upgrade to a newer release of the Optimizely SDK");
             return null;
-        } catch (NullMatch nm) {
-            logger.warn("Audience condition \"{}\" " + nm.getNullMatchTypeErrors().toString(),
-                this);
+        } catch (IncompatibleMatchValue e) {
+            logger.warn("Audience condition has an unexpected value type. You may need to upgrade to a newer release of the Optimizely SDK", e.getMessage());
             return null;
         }
+    }
+
+    // TODO consider splitting out into MatchConditionFactory class
+    Condition getCondition() throws UnknownMatchTypeException, IncompatibleMatchValue {
+        Condition condition = null;
+
+        // match is assigned when match and conditionValue are compatible
+        if (match == null) {
+            if (value instanceof CharSequence) {
+                condition = new DefaultMatchCondition<>(name, value.toString());
+            }
+        } else {
+            switch (match) {
+                case "exists":
+                    // TODO log if value != null?
+                    condition = new ExistsMatch(name);
+                    break;
+                case "exact":
+                    if (value instanceof CharSequence) {
+                        condition = new StringMatchCondition(name, value.toString());
+                    } else if (value != null && isValidNumber(value)) {
+                        condition = new NumericMatchCondition(name, (Number) value, NumericMatchCondition.Operator.EQUAL_TO);
+                    } else if (value instanceof Boolean) {
+                        condition = new DefaultMatchCondition<>(name, (Boolean) value);
+                    }
+                    break;
+                case "substring":
+                    if (value instanceof CharSequence) {
+                        condition = new SubstringMatchCondition(name, (CharSequence) value);
+                    }
+                    break;
+                case "gt":
+                    if (value != null && isValidNumber(value)) {
+                        condition = new NumericMatchCondition(name, (Number) value, NumericMatchCondition.Operator.GREATER_THAN);
+                    }
+                    break;
+                case "lt":
+                    if (value != null && isValidNumber(value)) {
+                        condition = new NumericMatchCondition(name, (Number) value, NumericMatchCondition.Operator.LESS_THAN);
+                    }
+                    break;
+                default:
+                    throw new UnknownMatchTypeException();
+            }
+        }
+
+        if (match == null) {
+            throw new IncompatibleMatchValue();
+        }
+
+        return condition;
+    }
+
+    private static boolean isValidNumber(Object o) {
+        if (o instanceof Integer) { // TODO accept Long?
+            return Math.abs((Integer) o) <= 1e53;
+        } else if (o instanceof Double) { // TODO accept Float?
+            Double value = ((Number) o).doubleValue();
+            return !(value.isNaN() || value.isInfinite());
+        }
+        return false;
     }
 
     @Override
@@ -158,4 +189,8 @@ public class UserAttribute<T> implements Condition<T> {
         result = 31 * result + (value != null ? value.hashCode() : 0);
         return result;
     }
+
+    static class UnknownMatchTypeException extends Exception {}
+
+    static class IncompatibleMatchValue extends Exception {}
 }

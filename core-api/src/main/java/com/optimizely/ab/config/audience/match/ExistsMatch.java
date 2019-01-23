@@ -16,20 +16,22 @@
  */
 package com.optimizely.ab.config.audience.match;
 
-import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
+import com.optimizely.ab.config.ProjectConfig;
+import com.optimizely.ab.config.audience.Condition;
 
 import javax.annotation.Nullable;
+import java.util.Map;
 
-class ExistsMatch implements Match {
-    @SuppressFBWarnings("URF_UNREAD_FIELD")
-    Object value;
+public class ExistsMatch<T> implements Condition<T> {
+    private final String name;
 
-    protected ExistsMatch(Object value) {
-        this.value = value;
+    public ExistsMatch(String name) {
+        this.name = name;
     }
 
     @Nullable
-    public Boolean eval(Object attributeValue) {
-        return attributeValue != null;
+    @Override
+    public Boolean evaluate(ProjectConfig config, Map<String, ?> attributes) {
+        return attributes != null && (attributes.get(name) != null);
     }
 }
